@@ -1,0 +1,125 @@
+---
+title: "5205 Project_data analysis"
+author: "Xinyun Li"
+date: "11/30/2021"
+output: html_document
+---
+
+```{r }
+setwd("~/Downloads")
+getwd()
+```
+
+
+### Loading data
+```{r}
+
+library(tidyverse)
+data_ks <- read_csv(file="/Users/lixinyun/Downloads/kc_house_data.csv",)
+head(data_ks)
+dim(data_ks)
+names(data_ks)
+```
+
+
+###  Data Cleaning: I delete the variable id and date of the data because id is not a variable we should consider to include in our linear model and date is hard to anlyse in GLM. I also deleted zipcode because there are too many zipcodes variation here so that it is hard to convert them into a categorical variable representing different areas in King city of Seattle. I changed year_renovated into a dummy variable representing whether the house was renovated or not because there are too many 0 in the original variable and i do not think that year of renovation will effect the pricing given a lot of 0 inside it. And I decompose the date into year of sale and month of sale for easier linear regression model and I also add one variable that representing the age of the house by substracting year sale by yaer built. 
+```{R}
+data_ks$yr_renovated <- as.integer(data_ks$yr_renovated!=0)
+
+data_ks <- data_ks%>%mutate(yr_sale = as.double(format(date,format = "%Y")),
+                            mon_sale = as.factor(format(date,format = "%m")),
+                            age = yr_sale-yr_built)%>%
+  rename("renovated" ="yr_renovated")%>%
+  dplyr::select(-c(id,date,zipcode,yr_built))
+```
+
+
+#Split variable into continous and catigorical variable
+```{R}
+data_ks_cont <- dplyr::select(data_ks,c(price,sqft_living,sqft_lot,sqft_above,lat,long,sqft_living15,sqft_basement,sqft_lot15,age))
+data_ks_cat <- dplyr::select(data_ks,-c(price,sqft_living,sqft_lot,sqft_above,lat,long,sqft_living15,sqft_basement,sqft_lot15,age))
+head(data_ks_cont)
+head(data_ks_cat)
+```
+
+
+
+### Detection for multicollinearity in continous variables.
+```{R}
+cor_cont <- cor(data_ks_cont)
+library(corrplot)
+corrplot(cor_cont,method = "pie")
+# Delete sqft_living15,sqft_lot15,sqft_above
+data_ks_cont <- dplyr::select(data_ks_cont,-c(sqft_living15,sqft_lot15,sqft_above)) 
+head(data_ks_cont)
+cor_cont2 <- cor(data_ks_cont)
+corrplot(cor_cont2,method = "pie")
+``` 
+
+### Anova test for categorical variables: We can see that every categorical variable is significant
+```{R}
+data_ks_cat <- lapply(data_ks_cat, factor)
+sapply(data_ks_cat, class)
+model_cat <- lm(data_ks$price~.,data_ks_cat)
+anova(model_cat)
+
+```
+### Checking for outliers.
+```{R}
+data_ks1 <- cbind(data_ks_cont,data_ks_cat)
+
+model1 <- lm(price~., data = data_ks)
+ols_plot_cooksd_bar(model1)
+```
+### Check for assumptions
+```{R}
+modelf <- lm(price~., data = data_ks)
+summary(modelf)
+par(mfrow = c(2, 2))
+plot(modelf)
+
+```
+### Box-cox transformation vs Log transformation
+```{R}
+library(MASS)
+bc <- boxcox(modelf)
+(lambda <- bc$x[which.max(bc$y)])
+box_model <- lm(((price^lambda-1)/lambda) ~ ., data = data_ks)
+par(mfrow = c(2, 2))
+plot(box_model)
+log_model <- lm(log(price) ~ ., data = data_ks)
+par(mfrow = c(2, 2))
+plot(log_model)
+```
+### Performing weighted least square to obtain constant variance
+```{R}
+#perform Breusch-Pagan test
+library(lmtest)
+bptest(box_model)
+
+wt <- 1 / lm(abs(box_model$residuals) ~ box_model$fitted.values)$fitted.values^2
+wls_model <- lm( ((price^lambda-1)/lambda)~ ., data = data_ks, weights=wt)
+par(mfrow = c(2, 2))
+plot(wls_model)
+
+library(lmtest)
+bptest(wls_model)
+
+```
+
+
+
+
+```{R}
+
+library(olsrr)
+step_forward <- ols_step_forward_p(wls_model, details = TRUE)
+step_forward
+plot(step_forward)
+
+
+```
+
+
+
+
