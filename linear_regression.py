@@ -5,13 +5,15 @@ import pandas as pd
 import numpy as np
 import itertools
 import statsmodels.api as sm
-from statsmodels.graphics.regressionplots import abline_plot
+import matplotlib.pyplot as plt
+from sklearn.metrics import mean_squared_error
 
 global xtrain
 global xtest
 global ytrain
 global ytest
 global main_model
+global train_data
 
 global min_aic
 min_aic = 200000000
@@ -45,9 +47,18 @@ xtrain = traindata.drop(columns=['price'])
 ytest = testdata['price']
 xtest = testdata.drop(columns=['price'])
 
+mean = xtrain.mean()
+std = xtrain.std()
+label_mean = ytrain.mean()
+label_std = ytest.std()
+xtrain, xtest, ytrain, ytest = (xtrain-mean)/std, (xtest-mean)/std, (ytrain-label_mean)/label_std, (ytest-label_mean)/label_std
+
+#sm.add_constant(1)
+#full_model = sm.OLS(ytrain, xtrain).fit()
 sm.add_constant(1)
 full_model = sm.OLS(ytrain, xtrain).fit()
-full_model_mse = full_model.mse_resid
+full_model_mse = mean_squared_error(ytrain, full_model.fittedvalues)
+
 
 for subset in itertools.combinations(xtrain.columns, 15):
     # get the model and aic, bic, rsquared, rsquared adj, cp
@@ -106,12 +117,12 @@ subset_step=('age','bathrooms','bedrooms', 'condition',
 step_model = sm.OLS(ytrain, xtrain[np.asarray(subset_step)]).fit()
 
 #get mse for each model, lowest mse = the model we want to try to use for prediction
-aic_score = aic_model.mse_resid
-bic_score = bic_model.mse_resid
-rsq_score = rsq_model.mse_resid
-rsq_adj_score = rsq_adj_model.mse_resid
-cp_score = cp_model.mse_resid
-step_score = step_model.mse_resid
+aic_score = aic_model.mse_model
+bic_score = bic_model.mse_model
+rsq_score = rsq_model.mse_model
+rsq_adj_score = rsq_adj_model.mse_model
+cp_score = cp_model.mse_model
+step_score = step_model.mse_model
 
 min_score=min(np.asarray([aic_score, bic_score, rsq_score,
                           rsq_adj_score, cp_score, step_score]))
@@ -140,20 +151,15 @@ print(main_model.summary())
 
 #use main model on test data
 pred_values = main_model.predict(xtest[np.asarray(subset_aic)])
+print(mean_squared_error(ytest, pred_values))
 
 #graph performances of model on train and test data
-# scatter-plot data
-ax = motif.plot(x=main_model.fittedvalues, y=ytrain, kind='scatter')
-
-# plot regression line
-abline_plot(main_model, ax=ax)
-
+plt.scatter(ytrain, main_model.fittedvalues.values)
+plt.xlabel('True Values - Train')
+plt.ylabel('Fitted Values - Train')
 plt.show()
 
-bx = motif.plot(x=pred_values, y=ytest, kind='scatter')
-abline_plit(main_model, ax=bx)
-
+plt.scatter(ytest, pred_values)
+plt.xlabel('True Values - Test')
+plt.ylabel('Predicted Values - Test')
 plt.show()
-
-
-
